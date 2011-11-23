@@ -1,6 +1,8 @@
 package redis.rmq;
 
 import java.util.Set;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.Tuple;
@@ -9,6 +11,8 @@ public class Consumer {
     private Nest topic;
     private Nest subscriber;
     private String id;
+    private volatile boolean running = true;
+    
 
     public Consumer(final Jedis jedis, final String id, final String topic) {
         this.topic = new Nest("topic:" + topic, jedis);
@@ -27,17 +31,28 @@ public class Consumer {
     }
 
     public void consume(Callback callback) {
-        while (true) {
-            String message = readUntilEnd();
-            if (message != null)
-                callback.onMessage(message);
-            else
-                waitForMessages();
+        while ( running ) {
+        	synchronized (this) {
+        		if( !running )
+        			break;
+        		String message = readUntilEnd();
+                if (message != null)
+                    callback.onMessage(message);
+                else
+                    waitForMessages();
+        	}
+			
         }
     }
 
     public String consume() {
         return readUntilEnd();
+    }
+    
+    public void stop() {
+    	this.running = false;
+
+    	synchronized(this){} //Just wait process the message
     }
 
     private String readUntilEnd() {

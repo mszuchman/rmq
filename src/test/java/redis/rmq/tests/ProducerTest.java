@@ -2,6 +2,8 @@ package redis.rmq.tests;
 
 import java.io.IOException;
 
+import junit.framework.AssertionFailedError;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -27,7 +29,7 @@ public class ProducerTest extends Assert {
         p.publish("hello world!");
         assertEquals("hello world!", c.consume());
     }
-
+ 
     @Test
     public void publishAndRead() {
         Producer p = new Producer(new Jedis("localhost"), "foo");
@@ -162,4 +164,54 @@ public class ProducerTest extends Assert {
 
         assertEquals("2", c.consume());
     }
+    
+    @Test
+    public void publishAndConsumeWithStop() throws InterruptedException {
+        Producer p = new Producer(new Jedis("localhost"), "foo");
+        final Consumer c = new Consumer(new Jedis("localhost"), "a subscriber", "foo");
+        
+        final StopeableCallback cb = new StopeableCallback( new Callback() {
+			
+			public void onMessage(String message) {
+				assertEquals("hello world!", message);
+				sleep(100);
+			}
+		});
+        
+        for (int i = 0; i < 10; i++) {
+        	p.publish("hello world!");			
+		}
+        
+        Thread t = new Thread(){
+        	public void run() {
+                c.consume(cb); 
+        	};
+        };
+        t.start();
+        sleep(500);
+        c.stop();
+        cb.stop();
+        t.join();
+        
+    }
+    
+    class StopeableCallback implements Callback{
+    	private Callback wrappedCbk;
+    	private boolean isStopped = false;
+    	
+    	public StopeableCallback( Callback cbk ) {
+			this.wrappedCbk = cbk;
+		}
+    	
+    	public void onMessage(String message) {
+    		if( isStopped )
+    			throw new AssertionFailedError("Received message when stopped");
+    		this.wrappedCbk.onMessage(message);
+    	}
+    	private void stop() {
+    		isStopped = true;
+		}
+    	
+    }
+    
 }
